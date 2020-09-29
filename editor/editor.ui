@@ -11,12 +11,12 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>DORK Editor</string>
+   <string>PORK Editor</string>
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QHBoxLayout" name="horizontalLayout">
     <item>
-     <widget class="DictionaryTreeView" name="tree_view"/>
+     <widget class="MapDictionaryTreeView" name="tree_view"/>
     </item>
    </layout>
   </widget>
@@ -26,7 +26,7 @@
      <x>0</x>
      <y>0</y>
      <width>800</width>
-     <height>20</height>
+     <height>26</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuFile">
@@ -57,9 +57,9 @@
  </widget>
  <customwidgets>
   <customwidget>
-   <class>DictionaryTreeView</class>
+   <class>MapDictionaryTreeView</class>
    <extends>QTreeView</extends>
-   <header>dictionarytreeview.h</header>
+   <header>editor.h</header>
   </customwidget>
  </customwidgets>
  <resources/>
