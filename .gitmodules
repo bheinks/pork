@@ -1,0 +1,3 @@
+[submodule "editor/dictionarytreeview"]
+	path = editor/dictionarytreeview
+	url = git@github.com:bheinks/dictionarytreeview.git
