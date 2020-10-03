@@ -64,8 +64,8 @@ class MapDictionaryTreeView(DictionaryTreeView):
         # Resize columns to view size
         self.header().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
 
-    def build_menu(self, position):
-        menu = super().build_menu(position)
+    def buildMenu(self, position):
+        menu = super().buildMenu(position)
 
         # Only display without item selected
         if not self.indexAt(position).isValid():
@@ -117,8 +117,6 @@ class MapEditor(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         uic.loadUi('map_editor.ui', self)
-
-        self.selected_tile = None
 
         # Close window on Escape
         shortcut_close = QtWidgets.QShortcut(QKeySequence('Escape'), self)
