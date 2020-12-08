@@ -3,6 +3,7 @@
 import sys
 import json
 from functools import partial
+from pprint import pprint
 
 from PyQt5 import uic, QtWidgets
 from PyQt5.QtCore import Qt, QModelIndex
@@ -122,115 +123,189 @@ class MapEditor(QtWidgets.QMainWindow):
         shortcut_close = QtWidgets.QShortcut(QKeySequence('Escape'), self)
         shortcut_close.activated.connect(self.close)
 
-        self.tile_layout = self.findChild(QtWidgets.QGridLayout, 'gridLayout')
+        # Set graphics scene
+        view = self.findChild(QtWidgets.QGraphicsView, 'graphicsView')
+        self.scene = QtWidgets.QGraphicsScene(self)
+        view.setScene(self.scene)
 
-        # Add center tile
-        self.add_tile()
+        # Initialize 3x3 grid
+        self.map = Map(self.scene)
+        self.map.add_tile(0, 0)
 
-    def add_tile(self, tile=None):
-        # Replace tile if one is passed in
-        if tile:
-            tile_row, tile_col, _ = self.get_tile_position(tile)
-            tile.deleteLater()
-        else:
-            tile_row, tile_col = 0, 0
+    def showEvent(self, e):
+        super().showEvent(e)
+        self.map.draw_grid()
 
-        if tile_row == 0:
-            tile_row = 1
-            for row in range(self.tile_layout.rowCount(), -1, -1):
-                for col in range(self.tile_layout.columnCount(), -1, -1):
-                    item = self.tile_layout.itemAtPosition(row, col)
-                    if not item:
-                        continue
 
-                    index = self.tile_layout.indexOf(item)
-                    self.tile_layout.takeAt(index)
-                    self.tile_layout.addItem(item, row+1, col)
+class Map:
+    def __init__(self, scene):
+        self.scene = scene
+        self.grid = [[None]]
+        self.num_rows = 1
+        self.num_cols = 1
+        self.center_x = 0
+        self.center_y = 0
 
-        if tile_col == 0:
-            tile_col = 1
-            for row in range(self.tile_layout.rowCount(), -1, -1):
-                for col in range(self.tile_layout.columnCount(), -1, -1):
-                    item = self.tile_layout.itemAtPosition(row, col)
-                    if not item:
-                        continue
+    def draw_grid(self):
+        for row in self.grid:
+            for tile in row:
+                if tile:
+                    widget = tile.widget()
+                    x = (widget.x * widget.width()) + (widget.x * 5)
+                    y = (widget.y * widget.height()) + (widget.y * 5)
+                    tile.setPos(x, y)
 
-                    index = self.tile_layout.indexOf(item)
-                    self.tile_layout.takeAt(index)
-                    self.tile_layout.addItem(item, row, col+1)
+    def add_tile(self, x, y):
+        tile = TileLabel(x, y, self)
 
-        # Add tile
-        label = TileLabel(self)
-        self.tile_layout.addWidget(label, tile_row, tile_col)
+        # Normalize position
+        x += self.center_x
+        y += self.center_y
 
-        # Add buttons around tile, where applicable
-        for neighbor_col, neighbor_row in [(-1,-1), (0,-1), (1,-1),
-                                           (-1, 0),         (1, 0),
-                                           (-1, 1), (0, 1), (1, 1)]:
-            row = tile_row + neighbor_row
-            col = tile_col + neighbor_col
+        # Expand grid horizontally (left)
+        if x == 0:
+            for row in range(self.num_rows):
+                self.grid[row].insert(0, None)
 
-            item = self.tile_layout.itemAtPosition(row, col)
-            if not item:
-                button = TileButton(self)
-                self.tile_layout.addWidget(button, row, col)
+            # Adjust column values
+            self.num_cols += 1
+            self.center_x += 1
+            x += 1
 
-    def remove_tile(self, tile):
-        row, col, index = self.get_tile_position(tile)
-        self.tile_layout.takeAt(index)
-        tile.deleteLater()
+        # Expand grid horizontally (right)
+        if x == self.num_cols - 1:
+            for row in range(self.num_rows):
+                self.grid[row].append(None)
+            self.num_cols += 1
 
-        button = TileButton(self)
-        self.tile_layout.addWidget(button, row, col)
+        # Expand grid vertically (top)
+        if y == 0:
+            self.grid.insert(0, [None] * self.num_cols)
 
+            # Adjust row values
+            self.num_rows += 1
+            self.center_y += 1
+            y += 1
+
+        # Expand grid vertically (bottom)
+        if y == self.num_rows - 1:
+            self.grid.append([None] * self.num_cols)
+            self.num_rows += 1
+
+        self.grid[y][x] = self.scene.addWidget(tile)
+        self.add_neighbors(x, y)
+
+        self.draw_grid()
+
+    def remove_tile(self, x, y):
+        button = TileButton(x, y, self)
+
+        # Normalize position
+        x += self.center_x
+        y += self.center_y
+
+        # Remove tile label from grid
+        tile = self.grid[y][x]
+        pprint(self.grid)
+        print(f'delete item at {x}, {y}')
+        #self.scene.removeItem(tile)
+        tile.setZValue(-999)
+        tile.widget().hide()
+        tile.widget().deleteLater()
+        del tile
+
+        # Replace with button
+        self.grid[y][x] = self.scene.addWidget(button)
+
+        # Reshape grid
         self.reshape()
 
+        # Update tile positions
+        self.draw_grid()
+
     def reshape(self):
-        # Loop over tile layout
-        for row in range(self.tile_layout.rowCount()):
-            for col in range(self.tile_layout.columnCount()):
-                item = self.tile_layout.itemAtPosition(row, col)
+        for y in range(self.num_rows):
+            for x in range(self.num_cols):
+                tile = self.grid[y][x]
 
-                # If item is TileButton
-                if item and isinstance(item.widget(), TileButton):
+                if tile and isinstance(tile.widget(), TileButton):
                     neighborless = True
+                    for rel_x, rel_y in [(-1,-1), (0,-1), (1,-1),
+                                         (-1, 0),         (1, 0),
+                                         (-1, 1), (0, 1), (1, 1)]:
+                        abs_x = x + rel_x
+                        abs_y = y + rel_y
 
-                    # Loop over neighbors
-                    for rel_col, rel_row in [(-1,-1), (0,-1), (1,-1),
-                                             (-1, 0),         (1, 0),
-                                             (-1, 1), (0, 1), (1, 1)]:
-                        neighbor_row = row + rel_row
-                        neighbor_col = col + rel_col
+                        # Bounds check
+                        if not (0 <= abs_x < self.num_cols) or not (0 <= abs_y < self.num_rows):
+                            continue
 
-                        neighbor = self.tile_layout.itemAtPosition(neighbor_row, neighbor_col)
+                        neighbor = self.grid[abs_y][abs_x]
 
-                        # If neighbor is TileLabel
                         if neighbor and isinstance(neighbor.widget(), TileLabel):
-                            # TileButton isn't without neighbors
                             neighborless = False
                             break
 
                     if neighborless:
-                        # Delete neighborless buttons
-                        item.widget().deleteLater()
+                        # Remove tile button from grid
+                        pprint(self.grid)
+                        print(f'delete item at {x}, {y}')
+                        #self.scene.removeItem(tile)
+                        tile.setZValue(-999)
+                        tile.widget().hide()
+                        tile.deleteLater()
+                        del tile
+                        self.grid[y][x] = None
 
-    def get_tile_position(self, tile):
-        index = self.tile_layout.indexOf(tile)
-        row, col, *_ = self.tile_layout.getItemPosition(index)
+        # Check top row
+        if all(tile is None for tile in self.grid[0]):
+            self.grid.pop(0)
+            self.num_rows -= 1
+            self.center_y -= 1
 
-        return row, col, index
+        # Check bottom row
+        if all(tile is None for tile in self.grid[self.num_rows - 1]):
+            self.grid.pop(self.num_rows - 1)
+            self.num_rows -= 1
+
+        # Check left column
+        if all(row[0] is None for row in self.grid):
+            for row in self.grid:
+                row.pop(0)
+            self.num_cols -= 1
+            self.center_x -= 1
+
+        # Check right column
+        if all(row[self.num_cols - 1] is None for row in self.grid):
+            for row in self.grid:
+                row.pop(self.num_cols - 1)
+            self.num_cols -= 1
+
+        print(self.num_rows, self.num_cols)
+
+    def add_neighbors(self, x, y):
+        tile = self.grid[y][x]
+
+        for rel_x, rel_y in [(-1,-1), (0,-1), (1,-1),
+                             (-1, 0),         (1, 0),
+                             (-1, 1), (0, 1), (1, 1)]:
+            abs_x = x + rel_x
+            abs_y = y + rel_y
+            neighbor = self.grid[abs_y][abs_x]
+
+            if not neighbor:
+                button = TileButton(tile.widget().x + rel_x, tile.widget().y + rel_y, self)
+                self.grid[abs_y][abs_x] = self.scene.addWidget(button)
 
 
 class TileLabel(QtWidgets.QLabel):
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def __init__(self, x, y, parent=None):
+        super().__init__()
 
+        self.x = x
+        self.y = y
         self.parent = parent
-        self.editor = TileEditor(self)
-
-        # Right click context menu
-        self.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.customContextMenuRequested.connect(self.open_menu)
+        self.editor = TileEditor()
 
         self.setMinimumSize(100, 100)
         self.setMaximumSize(100, 100)
@@ -243,12 +318,21 @@ class TileLabel(QtWidgets.QLabel):
         edit_tile_action.triggered.connect(self.editor.show)
 
         remove_tile_action = menu.addAction('Remove Tile')
-        remove_tile_action.triggered.connect(partial(self.parent.remove_tile, self))
+        remove_tile_action.triggered.connect(partial(self.parent.remove_tile, self.x, self.y))
 
         menu.exec(self.mapToGlobal(position))
 
+    def mousePressEvent(self, e):
+        if e.button() == Qt.RightButton:
+            self.open_menu(e.pos())
+        else:
+            super().mousePressEvent(e)
+
     def mouseDoubleClickEvent(self, e):
-        self.editor.show()
+        if e.button() == Qt.LeftButton:
+            self.editor.show()
+        else:
+            super().mouseDoubleClickEvent(e)
 
 
 class TileEditor(QtWidgets.QDialog):
@@ -274,14 +358,17 @@ class TileEditor(QtWidgets.QDialog):
 
 
 class TileButton(QtWidgets.QPushButton):
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def __init__(self, x, y, parent=None):
+        super().__init__()
+
+        self.x = x
+        self.y = y
 
         self.setMinimumSize(100, 100)
         self.setMaximumSize(100, 100)
         self.setText('...')
 
-        self.clicked.connect(partial(parent.add_tile, self))
+        self.clicked.connect(partial(parent.add_tile, self.x, self.y))
 
 
 if __name__ == '__main__':
